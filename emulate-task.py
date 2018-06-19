@@ -1,6 +1,7 @@
 import argparse
 import threading
 import subprocess
+import consul
 from time import sleep
 
 parser = argparse.ArgumentParser(description="Container that uses stress and iPerf3 to emulate a task")
@@ -10,6 +11,7 @@ parser.add_argument("-t", "--timeout", help="time to run (in seconds)", default=
 parser.add_argument("-b", "--bandwidth", help="network traffic (in Mb/s)")
 parser.add_argument("--host", help="target host for iperf3", default="127.0.0.1")
 parser.add_argument("-p", "--port", help="target host port", default=5201)
+parser.add_argument("-i", "--id", help="task ID", required=True)
 args = parser.parse_args()
 
 def stress_cpu(cpu,timeout):
@@ -42,6 +44,14 @@ def iperf_server(port):
   popen = subprocess.Popen(command)
   popen.wait()
 
+def finish_task():
+  # Write value to Consul to signal end of task
+  task_id = args.id
+  c = consul.Consul(host="145.100.104.102")
+  print(task_id)
+  c.kv.put(task_id, '1')
+
+# Initalize threads
 class myThread (threading.Thread):
   def __init__(self, threadID):
     threading.Thread.__init__(self)
@@ -61,16 +71,24 @@ thread2 = myThread(2)
 thread3 = myThread(3)
 thread4 = myThread(4)
 
+# Start relevant threads
+# Join threads and wait for all of them to finish before writing to Consul
 if (args.bandwidth):
   # Start a local server if the target host is this container
   if ((args.host == "127.0.0.1") or (args.host == "localhost")):
     thread1.start()
+    thread1.join()
     # Allow server to start up before calling client
     sleep(1)
   thread4.start()
+  thread4.join()
 
 if (args.cpu):
   thread2.start()
+  thread2.join()
 
 if (args.memory):
   thread3.start()
+  thread3.join()
+
+finish_task()
